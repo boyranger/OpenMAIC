@@ -122,18 +122,11 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
-To use the optional MinerU document parser, uncomment the `mineru` service in `docker-compose.yml`.
-
 ### Optional: MinerU (Advanced Document Parsing)
 
-For enhanced parsing of complex tables and formulas:
+[MinerU](https://github.com/opendatalab/MinerU) provides enhanced parsing for complex tables, formulas, and OCR. You can use the [MinerU official API](https://mineru.net/) or [self-host your own instance](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/).
 
-```bash
-docker pull opendatalab/mineru:latest
-docker run -d --name mineru -p 8080:8080 opendatalab/mineru:latest
-```
-
-Set `PDF_MINERU_BASE_URL=http://localhost:8080` in `.env.local`.
+Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 
 ---
 

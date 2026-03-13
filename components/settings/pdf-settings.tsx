@@ -4,11 +4,13 @@ import { useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
-import { CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, Loader2, Zap, XCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 /**
  * Get display label for feature
@@ -32,19 +34,60 @@ interface PDFSettingsProps {
 export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
   const { t } = useI18n();
   const [showApiKey, setShowApiKey] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState('');
 
   const pdfProvidersConfig = useSettingsStore((state) => state.pdfProvidersConfig);
   const setPDFProviderConfig = useSettingsStore((state) => state.setPDFProviderConfig);
 
   const pdfProvider = PDF_PROVIDERS[selectedProviderId];
   const isServerConfigured = !!pdfProvidersConfig[selectedProviderId]?.isServerConfigured;
+  const providerConfig = pdfProvidersConfig[selectedProviderId];
+  const hasBaseUrl = !!providerConfig?.baseUrl;
+  const needsRemoteConfig = selectedProviderId === 'mineru';
 
-  // Reset showApiKey when provider changes (derived state pattern)
+  // Reset state when provider changes
   const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
   if (selectedProviderId !== prevSelectedProviderId) {
     setPrevSelectedProviderId(selectedProviderId);
     setShowApiKey(false);
+    setTestStatus('idle');
+    setTestMessage('');
   }
+
+  const handleTestConnection = async () => {
+    const baseUrl = providerConfig?.baseUrl;
+    if (!baseUrl) return;
+
+    setTestStatus('testing');
+    setTestMessage('');
+
+    try {
+      const response = await fetch('/api/verify-pdf-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerId: selectedProviderId,
+          apiKey: providerConfig?.apiKey || '',
+          baseUrl,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setTestStatus('success');
+        setTestMessage(t('settings.connectionSuccess'));
+      } else {
+        setTestStatus('error');
+        setTestMessage(`${t('settings.connectionFailed')}: ${data.error}`);
+      }
+    } catch (err) {
+      setTestStatus('error');
+      const message = err instanceof Error ? err.message : String(err);
+      setTestMessage(`${t('settings.connectionFailed')}: ${message}`);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -55,19 +98,54 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
         </div>
       )}
 
-      {/* API Key + Base URL Configuration */}
-      {(pdfProvider.requiresApiKey || isServerConfigured) && (
+      {/* Base URL + API Key Configuration (for remote providers like MinerU) */}
+      {(needsRemoteConfig || isServerConfigured) && (
         <>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-sm">{t('settings.pdfApiKey')}</Label>
+              <Label className="text-sm">{t('settings.pdfBaseUrl')}</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="http://localhost:8080"
+                  value={providerConfig?.baseUrl || ''}
+                  onChange={(e) =>
+                    setPDFProviderConfig(selectedProviderId, { baseUrl: e.target.value })
+                  }
+                  className="text-sm"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestConnection}
+                  disabled={testStatus === 'testing' || !hasBaseUrl}
+                  className="gap-1.5 shrink-0"
+                >
+                  {testStatus === 'testing' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Zap className="h-3.5 w-3.5" />
+                      {t('settings.testConnection')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm">
+                {t('settings.pdfApiKey')}
+                <span className="text-muted-foreground ml-1 font-normal">
+                  ({t('settings.optional')})
+                </span>
+              </Label>
               <div className="relative">
                 <Input
                   type={showApiKey ? 'text' : 'password'}
                   placeholder={
                     isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
                   }
-                  value={pdfProvidersConfig[selectedProviderId]?.apiKey || ''}
+                  value={providerConfig?.apiKey || ''}
                   onChange={(e) =>
                     setPDFProviderConfig(selectedProviderId, {
                       apiKey: e.target.value,
@@ -84,25 +162,30 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
                 </button>
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm">{t('settings.pdfBaseUrl')}</Label>
-              <Input
-                placeholder="http://localhost:8080"
-                value={pdfProvidersConfig[selectedProviderId]?.baseUrl || ''}
-                onChange={(e) =>
-                  setPDFProviderConfig(selectedProviderId, {
-                    baseUrl: e.target.value,
-                  })
-                }
-                className="text-sm"
-              />
-            </div>
           </div>
+
+          {/* Test result message */}
+          {testMessage && (
+            <div
+              className={cn(
+                'rounded-lg p-3 text-sm',
+                testStatus === 'success' &&
+                  'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800',
+                testStatus === 'error' &&
+                  'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-800',
+              )}
+            >
+              <div className="flex items-center gap-2">
+                {testStatus === 'success' && <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                {testStatus === 'error' && <XCircle className="h-4 w-4 shrink-0" />}
+                <span className="break-all">{testMessage}</span>
+              </div>
+            </div>
+          )}
 
           {/* Request URL Preview */}
           {(() => {
-            const effectiveBaseUrl = pdfProvidersConfig[selectedProviderId]?.baseUrl || '';
+            const effectiveBaseUrl = providerConfig?.baseUrl || '';
             if (!effectiveBaseUrl) return null;
             const fullUrl = effectiveBaseUrl + '/file_parse';
             return (

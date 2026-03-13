@@ -20,7 +20,7 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
   mineru: {
     id: 'mineru',
     name: 'MinerU',
-    requiresApiKey: true,
+    requiresApiKey: false,
     icon: '/logos/mineru.png',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis'],
   },

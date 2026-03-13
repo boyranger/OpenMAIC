@@ -122,18 +122,11 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
-如需使用 MinerU 文档解析服务，取消 `docker-compose.yml` 中 `mineru` 服务的注释即可。
-
 ### 可选：MinerU（增强文档解析）
 
-如需更好地解析复杂表格和公式：
+[MinerU](https://github.com/opendatalab/MinerU) 提供更强的表格、公式和 OCR 解析能力。你可以使用 [MinerU 官方 API](https://mineru.net/) 或[自行部署](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/)。
 
-```bash
-docker pull opendatalab/mineru:latest
-docker run -d --name mineru -p 8080:8080 opendatalab/mineru:latest
-```
-
-在 `.env.local` 中设置 `PDF_MINERU_BASE_URL=http://localhost:8080`。
+在 `.env.local` 中设置 `PDF_MINERU_BASE_URL`（如需认证则同时设置 `PDF_MINERU_API_KEY`）。
 
 ---
 

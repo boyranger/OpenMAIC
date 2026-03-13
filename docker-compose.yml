@@ -11,14 +11,5 @@ services:
       - openmaic-data:/app/data
     restart: unless-stopped
 
-  # Optional: MinerU for advanced document parsing (tables, formulas, OCR)
-  # Uncomment to enable:
-  #
-  # mineru:
-  #   image: opendatalab/mineru:latest
-  #   ports:
-  #     - "8080:8080"
-  #   restart: unless-stopped
-
 volumes:
   openmaic-data:
