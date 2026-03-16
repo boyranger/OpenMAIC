@@ -9,6 +9,7 @@ import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
 import type { TTSProviderId, ASRProviderId } from '@/lib/audio/types';
+import { DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
@@ -515,20 +516,11 @@ export const useSettingsStore = create<SettingsState>()(
         // Audio actions
         setTTSProvider: (providerId) =>
           set((state) => {
-            // Define default voices for each provider
-            const defaultVoices: Record<TTSProviderId, string> = {
-              'openai-tts': 'alloy',
-              'azure-tts': 'zh-CN-XiaoxiaoNeural', // Xiaoxiao - Chinese Mandarin female
-              'glm-tts': 'tongtong',
-              'qwen-tts': 'Cherry',
-              'browser-native-tts': 'default',
-            };
-
             // If switching provider, set default voice for that provider
             const shouldUpdateVoice = state.ttsProviderId !== providerId;
             return {
               ttsProviderId: providerId,
-              ...(shouldUpdateVoice && { ttsVoice: defaultVoices[providerId] }),
+              ...(shouldUpdateVoice && { ttsVoice: DEFAULT_TTS_VOICES[providerId] }),
             };
           }),
 
@@ -838,14 +830,7 @@ export const useSettingsStore = create<SettingsState>()(
                   !newTTSConfig[state.ttsProviderId]?.isServerConfigured
                 ) {
                   autoTtsProvider = serverTtsIds[0];
-                  const defaultVoices: Record<TTSProviderId, string> = {
-                    'openai-tts': 'alloy',
-                    'azure-tts': 'zh-CN-XiaoxiaoNeural',
-                    'glm-tts': 'tongtong',
-                    'qwen-tts': 'Cherry',
-                    'browser-native-tts': 'default',
-                  };
-                  autoTtsVoice = defaultVoices[autoTtsProvider] || 'default';
+                  autoTtsVoice = DEFAULT_TTS_VOICES[autoTtsProvider] || 'default';
                 }
 
                 // ASR: select first server provider if current is not server-configured

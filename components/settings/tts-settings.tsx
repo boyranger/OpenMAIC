@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { TTS_PROVIDERS } from '@/lib/audio/constants';
+import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -25,6 +25,14 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
+  const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
+
+  // When testing a non-active provider, use that provider's default voice
+  // instead of the active provider's voice (which may be incompatible)
+  const effectiveVoice =
+    selectedProviderId === activeProviderId
+      ? ttsVoice
+      : DEFAULT_TTS_VOICES[selectedProviderId] || 'default';
 
   const ttsProvider = TTS_PROVIDERS[selectedProviderId] ?? TTS_PROVIDERS['openai-tts'];
   const isServerConfigured = !!ttsProvidersConfig[selectedProviderId]?.isServerConfigured;
@@ -65,7 +73,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         const utterance = new SpeechSynthesisUtterance(testText);
         utterance.rate = ttsSpeed;
         const voices = window.speechSynthesis.getVoices();
-        const selectedVoice = voices.find((v) => v.name === ttsVoice || v.lang === ttsVoice);
+        const selectedVoice = voices.find(
+          (v) => v.name === effectiveVoice || v.lang === effectiveVoice,
+        );
         if (selectedVoice) utterance.voice = selectedVoice;
         utterance.onend = () => {
           setTestStatus('success');
@@ -85,7 +95,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         text: testText,
         audioId: 'tts-test',
         ttsProviderId: selectedProviderId,
-        ttsVoice: ttsVoice,
+        ttsVoice: effectiveVoice,
         ttsSpeed: ttsSpeed,
       };
       const apiKeyValue = ttsProvidersConfig[selectedProviderId]?.apiKey;
