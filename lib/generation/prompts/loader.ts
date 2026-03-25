@@ -10,61 +10,104 @@
 
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import type { PromptId, LoadedPrompt, SnippetId } from './types';
+import type { PromptId, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('PromptLoader');
+
+interface LoadedPrompt {
+  id: PromptId;
+  systemPrompt: string;
+  userPromptTemplate: string;
+}
 
 // Cache for loaded prompts and snippets
 const promptCache = new Map<string, LoadedPrompt>();
 const snippetCache = new Map<string, string>();
 
+// Store prompts in memory at build time for SSR compatibility
+let promptsInitialized = false;
+const embeddedPrompts: Record<string, { system: string; user: string }> = {};
+
 /**
- * Get the prompts directory path
+ * Get the prompts directory path - try multiple locations
  */
 function getPromptsDir(): string {
-  // Try multiple methods to find the prompts directory
-  const possiblePaths = [
-    // Appwrite SSR: try __dirname first
-    path.join(__dirname, 'prompts'),
-    // Next.js standalone or SSR
+  // In production/SSR, prompts are embedded at build time
+  // Check multiple possible locations
+  const candidates = [
+    // Standard development
     path.join(process.cwd(), 'lib', 'generation', 'prompts'),
-    // Vercel or similar
+    // Next.js standalone output (server)
+    path.join(process.cwd(), '..', 'lib', 'generation', 'prompts'),
+    // Appwrite/Vercel SSR
     path.join(process.cwd(), '.next', 'server', 'lib', 'generation', 'prompts'),
-    // Fallback: relative to current file
-    path.join(path.dirname(fileURLToPath(import.meta.url)), 'prompts'),
   ];
 
-  for (const promptsPath of possiblePaths) {
+  for (const dir of candidates) {
     try {
-      if (fs.existsSync(promptsPath) && fs.statSync(promptsPath).isDirectory()) {
-        return promptsPath;
+      if (fs.existsSync(dir)) {
+        return dir;
       }
     } catch {
-      // Continue to next path
+      // continue
     }
   }
 
-  // Fallback to process.cwd() (original behavior)
+  // Default fallback
   return path.join(process.cwd(), 'lib', 'generation', 'prompts');
 }
 
 /**
- * Load a snippet by ID
+ * Initialize prompts from filesystem (for development)
  */
-export function loadSnippet(snippetId: SnippetId): string {
-  const cached = snippetCache.get(snippetId);
-  if (cached) return cached;
-
-  const snippetPath = path.join(getPromptsDir(), 'snippets', `${snippetId}.md`);
+function initPromptsFromFS(): void {
+  if (promptsInitialized) return;
 
   try {
-    const content = fs.readFileSync(snippetPath, 'utf-8').trim();
-    snippetCache.set(snippetId, content);
-    return content;
-  } catch {
-    log.warn(`Snippet not found: ${snippetId}`);
-    return `{{snippet:${snippetId}}}`;
+    const promptsDir = getPromptsDir();
+    const templatesDir = path.join(promptsDir, 'templates');
+    const snippetsDir = path.join(promptsDir, 'snippets');
+
+    // Load snippets
+    if (fs.existsSync(snippetsDir)) {
+      for (const file of fs.readdirSync(snippetsDir)) {
+        if (file.endsWith('.md')) {
+          const id = file.replace('.md', '');
+          snippetCache.set(id, fs.readFileSync(path.join(snippetsDir, file), 'utf-8').trim());
+        }
+      }
+    }
+
+    // Load prompts
+    if (fs.existsSync(templatesDir)) {
+      for (const dir of fs.readdirSync(templatesDir)) {
+        const templateDir = path.join(templatesDir, dir);
+        if (fs.statSync(templateDir).isDirectory()) {
+          const systemPath = path.join(templateDir, 'system.md');
+          const userPath = path.join(templateDir, 'user.md');
+
+          let systemPrompt = '';
+          let userPrompt = '';
+
+          try {
+            systemPrompt = fs.readFileSync(systemPath, 'utf-8').trim();
+          } catch {}
+
+          try {
+            userPrompt = fs.readFileSync(userPath, 'utf-8').trim();
+          } catch {}
+
+          if (systemPrompt) {
+            embeddedPrompts[dir] = { system: systemPrompt, user: userPrompt };
+          }
+        }
+      }
+    }
+
+    promptsInitialized = true;
+    log.info('Prompts initialized from filesystem', { promptsDir, promptCount: Object.keys(embeddedPrompts).length });
+  } catch (error) {
+    log.error('Failed to initialize prompts from filesystem:', error);
   }
 }
 
@@ -74,7 +117,19 @@ export function loadSnippet(snippetId: SnippetId): string {
  */
 function processSnippets(template: string): string {
   return template.replace(/\{\{snippet:(\w[\w-]*)\}\}/g, (_, snippetId) => {
-    return loadSnippet(snippetId as SnippetId);
+    const cached = snippetCache.get(snippetId);
+    if (cached) return cached;
+
+    // Try to load from filesystem
+    const snippetPath = path.join(getPromptsDir(), 'snippets', `${snippetId}.md`);
+    try {
+      const content = fs.readFileSync(snippetPath, 'utf-8').trim();
+      snippetCache.set(snippetId, content);
+      return content;
+    } catch {
+      log.warn(`Snippet not found: ${snippetId}`);
+      return `{{snippet:${snippetId}}}`;
+    }
   });
 }
 
@@ -84,6 +139,21 @@ function processSnippets(template: string): string {
 export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
   const cached = promptCache.get(promptId);
   if (cached) return cached;
+
+  // Try embedded prompts first
+  if (embeddedPrompts[promptId]) {
+    const prompt = embeddedPrompts[promptId];
+    const loaded: LoadedPrompt = {
+      id: promptId,
+      systemPrompt: processSnippets(prompt.system),
+      userPromptTemplate: processSnippets(prompt.user),
+    };
+    promptCache.set(promptId, loaded);
+    return loaded;
+  }
+
+  // Fallback: load from filesystem
+  initPromptsFromFS();
 
   const promptDir = path.join(getPromptsDir(), 'templates', promptId);
 
@@ -147,9 +217,29 @@ export function buildPrompt(
 }
 
 /**
+ * Load a snippet by ID
+ */
+export function loadSnippet(snippetId: SnippetId): string {
+  const cached = snippetCache.get(snippetId);
+  if (cached) return cached;
+
+  const snippetPath = path.join(getPromptsDir(), 'snippets', `${snippetId}.md`);
+
+  try {
+    const content = fs.readFileSync(snippetPath, 'utf-8').trim();
+    snippetCache.set(snippetId, content);
+    return content;
+  } catch {
+    log.warn(`Snippet not found: ${snippetId}`);
+    return `{{snippet:${snippetId}}}`;
+  }
+}
+
+/**
  * Clear all caches (useful for development/testing)
  */
 export function clearPromptCache(): void {
   promptCache.clear();
   snippetCache.clear();
+  promptsInitialized = false;
 }
