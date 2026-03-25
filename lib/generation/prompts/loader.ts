@@ -10,6 +10,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import type { PromptId, LoadedPrompt, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('PromptLoader');
@@ -22,7 +23,29 @@ const snippetCache = new Map<string, string>();
  * Get the prompts directory path
  */
 function getPromptsDir(): string {
-  // In Next.js, use process.cwd() for the project root
+  // Try multiple methods to find the prompts directory
+  const possiblePaths = [
+    // Appwrite SSR: try __dirname first
+    path.join(__dirname, 'prompts'),
+    // Next.js standalone or SSR
+    path.join(process.cwd(), 'lib', 'generation', 'prompts'),
+    // Vercel or similar
+    path.join(process.cwd(), '.next', 'server', 'lib', 'generation', 'prompts'),
+    // Fallback: relative to current file
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'prompts'),
+  ];
+
+  for (const promptsPath of possiblePaths) {
+    try {
+      if (fs.existsSync(promptsPath) && fs.statSync(promptsPath).isDirectory()) {
+        return promptsPath;
+      }
+    } catch {
+      // Continue to next path
+    }
+  }
+
+  // Fallback to process.cwd() (original behavior)
   return path.join(process.cwd(), 'lib', 'generation', 'prompts');
 }
 
